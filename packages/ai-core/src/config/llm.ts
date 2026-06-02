@@ -3,6 +3,8 @@ import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { AIMessageChunk } from '@langchain/core/messages';
+import { IterableReadableStream } from '@langchain/core/utils/stream';
 
 export type LLMProvider = 'groq' | 'openai' | 'anthropic' | 'gemini' | 'mistral' | 'ollama' | 'openrouter';
 
@@ -11,11 +13,13 @@ export interface LLMConfig {
   model?: string;
   apiKey?: string;
   temperature?: number;
+  streaming?: boolean;
 }
 
 export function createLLM(config?: Partial<LLMConfig>): BaseChatModel {
   const provider = (config?.provider || process.env.LLM_PROVIDER || 'groq') as LLMProvider;
   const temperature = config?.temperature ?? 0.7;
+  const streaming = config?.streaming ?? false;
 
   switch (provider) {
     case 'groq': {
@@ -25,6 +29,7 @@ export function createLLM(config?: Partial<LLMConfig>): BaseChatModel {
         apiKey,
         model: config?.model || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
         temperature,
+        streaming,
       });
     }
 
@@ -35,6 +40,7 @@ export function createLLM(config?: Partial<LLMConfig>): BaseChatModel {
         apiKey,
         modelName: config?.model || process.env.OPENAI_MODEL || 'gpt-4o-mini',
         temperature,
+        streaming,
       });
     }
 
@@ -45,6 +51,7 @@ export function createLLM(config?: Partial<LLMConfig>): BaseChatModel {
         apiKey,
         modelName: config?.model || process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-20241022',
         temperature,
+        streaming,
       } as any);
     }
 
@@ -55,6 +62,7 @@ export function createLLM(config?: Partial<LLMConfig>): BaseChatModel {
         apiKey,
         model: config?.model || process.env.GEMINI_MODEL || 'gemini-2.0-flash',
         temperature,
+        streaming,
       } as any);
     }
 
@@ -66,6 +74,7 @@ export function createLLM(config?: Partial<LLMConfig>): BaseChatModel {
         apiKey,
         modelName: config?.model || process.env.MISTRAL_MODEL || 'mistral-small-latest',
         temperature,
+        streaming,
         configuration: {
           baseURL: 'https://api.mistral.ai/v1',
         },
@@ -79,6 +88,7 @@ export function createLLM(config?: Partial<LLMConfig>): BaseChatModel {
         apiKey,
         modelName: config?.model || process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free',
         temperature,
+        streaming,
         configuration: {
           baseURL: 'https://openrouter.ai/api/v1',
           defaultHeaders: {
@@ -93,6 +103,7 @@ export function createLLM(config?: Partial<LLMConfig>): BaseChatModel {
       return new ChatOpenAI({
         modelName: config?.model || process.env.OLLAMA_MODEL || 'llama3',
         temperature,
+        streaming,
         configuration: {
           baseURL: `${process.env.OLLAMA_BASE_URL || 'http://localhost:11434'}/v1`,
           apiKey: 'ollama',
@@ -103,6 +114,18 @@ export function createLLM(config?: Partial<LLMConfig>): BaseChatModel {
     default:
       throw new Error(`Bilinmeyen provider: ${provider}`);
   }
+}
+
+/**
+ * Creates an LLM instance with streaming enabled and returns the stream
+ */
+export async function streamLLM(
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
+  config?: Partial<LLMConfig>
+): Promise<IterableReadableStream<AIMessageChunk>> {
+  const llm = createLLM({ ...config, streaming: true });
+  const response = await llm.stream(messages.map(m => [m.role, m.content] as const));
+  return response;
 }
 
 export const PROVIDERS = {

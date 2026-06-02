@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { runPlannerAgent } from '@cortexos/ai-core/src/agents/planner-agent';
+import { createLLM, getTemperatureForModel } from '@cortexos/ai-core/src/config/llm';
+import { buildSystemPrompt } from '@cortexos/ai-core/src/config/prompt-builder';
 import { getLocalUserId } from '../../../../lib/auth';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
@@ -39,8 +40,57 @@ export async function POST(request: Request) {
     const settings = getSettings();
     const selectedModel = model || settings.model;
 
-    const result = await runPlannerAgent(input, userId, [], selectedModel);
-    return NextResponse.json(result);
+    // Build system prompt
+    const promptResult = buildSystemPrompt({
+      agent: 'planner',
+      model: selectedModel,
+      hasHistory: false,
+      jsonSchema: JSON.stringify({
+        title: "Planın başlığı",
+        description: "Kısa açıklama",
+        steps: [
+          { id: "step-1", title: "Adım başlığı", description: "Detaylı açıklama", priority: 1, estimatedTime: 60 }
+        ],
+        timeline: { startDate: "bugün", endDate: "tahmini bitiş" }
+      }, null, 2),
+    });
+
+    const temperature = getTemperatureForModel(selectedModel, 'planner');
+    const llm = createLLM({ model: selectedModel, temperature, streaming: true });
+
+    const messages = [
+      { role: 'system' as const, content: promptResult.systemPrompt },
+      { role: 'user' as const, content: input },
+    ];
+
+    // Create streaming response
+    const encoder = new TextEncoder();
+    const stream = await llm.stream(messages);
+
+    const readableStream = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const chunk of stream) {
+            const text = chunk.content?.toString() || '';
+            if (text) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'token', content: text })}\n\n`));
+            }
+          }
+          controller.enqueue(encoder.encode('data: {"type":"done"}\n\n'));
+          controller.close();
+        } catch (error) {
+          controller.error(error);
+        }
+      },
+    });
+
+    return new Response(readableStream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Hata' }, { status: 500 });
   }

@@ -1,5 +1,6 @@
 import { createLLM } from '../config/llm';
 import { buildSystemPrompt, getTemperatureForModel } from '../config/prompt-builder';
+import { memoryService } from '../services/memory-service';
 
 export interface ResearchSource {
   title: string;
@@ -80,6 +81,9 @@ export async function runResearcherAgent(
 ): Promise<ResearchReport> {
   console.log('Researcher Agent başlatıldı', { userId, topic: topic.slice(0, 80), model });
 
+  // Get recent memory context
+  const memoryContext = await memoryService.getRecentContext(userId, 10);
+
   // 1. Tavily dene, yoksa SearXNG dene, yoksa LLM kendi bilgisiyle yapsın
   let sources: ResearchSource[] = await searchTavily(topic);
   if (sources.length === 0) sources = await searchSearXNG(topic);
@@ -102,6 +106,7 @@ export async function runResearcherAgent(
       findings: [{ statement: "Bulgu", confidence: 0.9, category: "kategori" }],
       recommendations: ["Öneri 1", "Öneri 2"]
     }, null, 2),
+    extraContext: memoryContext || undefined,
   });
 
   const temperature = getTemperatureForModel(model, 'researcher');

@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
-import { runWriterAgent } from '@cortexos/ai-core/src/agents/writer-agent';
+import { createLLM, getTemperatureForModel } from '@cortexos/ai-core/src/config/llm';
+import { buildSystemPrompt } from '@cortexos/ai-core/src/config/prompt-builder';
 import { getLocalUserId } from '../../../../lib/auth';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { rateLimiter, validateChatInput } from '@cortexos/utils';
 
-type H = { role: 'user' | 'assistant'; content: string };
+type HistoryMessage = { role: 'user' | 'assistant'; content: string };
 
 const SETTINGS_PATH = join(process.cwd(), '../../.cortexos-settings.json');
 
@@ -39,8 +40,49 @@ export async function POST(request: Request) {
     const settings = getSettings();
     const selectedModel = model || settings.model;
 
-    const result = await runWriterAgent(input, '', userId, [], selectedModel);
-    return NextResponse.json(result);
+    // Build system prompt
+    const promptResult = buildSystemPrompt({
+      agent: 'writer',
+      model: selectedModel,
+      hasHistory: false,
+    });
+
+    const temperature = getTemperatureForModel(selectedModel, 'writer');
+    const llm = createLLM({ model: selectedModel, temperature, streaming: true });
+
+    const messages = [
+      { role: 'system' as const, content: promptResult.systemPrompt },
+      { role: 'user' as const, content: input },
+    ];
+
+    // Create streaming response
+    const encoder = new TextEncoder();
+    const stream = await llm.stream(messages);
+
+    const readableStream = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const chunk of stream) {
+            const text = chunk.content?.toString() || '';
+            if (text) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'token', content: text })}\n\n`));
+            }
+          }
+          controller.enqueue(encoder.encode('data: {"type":"done"}\n\n'));
+          controller.close();
+        } catch (error) {
+          controller.error(error);
+        }
+      },
+    });
+
+    return new Response(readableStream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Hata' }, { status: 500 });
   }
