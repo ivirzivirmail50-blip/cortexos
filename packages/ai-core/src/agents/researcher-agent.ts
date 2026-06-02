@@ -1,4 +1,5 @@
 import { createLLM } from '../config/llm';
+import { buildSystemPrompt, getTemperatureForModel } from '../config/prompt-builder';
 
 export interface ResearchSource {
   title: string;
@@ -19,6 +20,7 @@ export interface ResearchReport {
   findings: ResearchFinding[];
   sources: ResearchSource[];
   recommendations?: string[];
+  debug?: { persona: string; flavor: string; model: string };
 }
 
 type HistoryMessage = { role: 'user' | 'assistant'; content: string };
@@ -73,9 +75,10 @@ async function searchSearXNG(query: string): Promise<ResearchSource[]> {
 export async function runResearcherAgent(
   topic: string,
   userId: string,
-  history: HistoryMessage[] = []
+  history: HistoryMessage[] = [],
+  model?: string
 ): Promise<ResearchReport> {
-  console.log('Researcher Agent başlatıldı', { userId, topic: topic.slice(0, 80) });
+  console.log('Researcher Agent başlatıldı', { userId, topic: topic.slice(0, 80), model });
 
   // 1. Tavily dene, yoksa SearXNG dene, yoksa LLM kendi bilgisiyle yapsın
   let sources: ResearchSource[] = await searchTavily(topic);
@@ -86,23 +89,26 @@ export async function runResearcherAgent(
     ? sources.map((s, i) => `[${i + 1}] ${s.title}\n${s.excerpt}`).join('\n\n')
     : 'Web araması mevcut değil — kendi bilginle kapsamlı araştırma yap.';
 
-  const llm = createLLM();
+  // Build system prompt using persona + agent template + model flavor
+  const promptResult = buildSystemPrompt({
+    agent: 'researcher',
+    model,
+    hasHistory: history.length > 0,
+    hasWebSources: hasRealSources,
+    sourcesText: sourceText,
+    jsonSchema: JSON.stringify({
+      topic,
+      summary: "Yönetici özeti (2-3 paragraf, Türkçe)",
+      findings: [{ statement: "Bulgu", confidence: 0.9, category: "kategori" }],
+      recommendations: ["Öneri 1", "Öneri 2"]
+    }, null, 2),
+  });
 
-  const systemPrompt = `Sen bir araştırma asistanısın. "${topic}" hakkında kapsamlı araştırma raporu hazırla.
-${hasRealSources ? 'Aşağıdaki web kaynaklarını kullan:' : 'Web araması yok, kendi bilginle araştırma yap. Gerçek ve güncel bilgiler ver.'}
-${sourceText}
-
-Önceki konuşma varsa bağlamı dikkate al.
-Yanıtını SADECE şu JSON formatında ver:
-{
-  "topic": "${topic}",
-  "summary": "Yönetici özeti (2-3 paragraf, Türkçe)",
-  "findings": [{"statement":"Bulgu","confidence":0.9,"category":"kategori"}],
-  "recommendations": ["Öneri 1","Öneri 2"]
-}`;
+  const temperature = getTemperatureForModel(model, 'researcher');
+  const llm = createLLM({ temperature });
 
   const messages = [
-    { role: 'system' as const, content: systemPrompt },
+    { role: 'system' as const, content: promptResult.systemPrompt },
     ...history.slice(-4),
     { role: 'user' as const, content: `"${topic}" hakkında araştırma raporu hazırla.` },
   ];
@@ -128,5 +134,6 @@ Yanıtını SADECE şu JSON formatında ver:
     findings: report.findings || [],
     sources,
     recommendations: report.recommendations,
+    debug: promptResult.debug,
   };
 }

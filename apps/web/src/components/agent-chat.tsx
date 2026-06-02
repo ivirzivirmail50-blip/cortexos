@@ -1,5 +1,6 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
+import { useProvider } from '../context/provider-context';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -17,6 +18,7 @@ interface AgentChatProps {
   placeholder?: string;
   suggestions?: string[];
   formatResponse?: (data: any) => string;
+  showModelSelector?: boolean; // Model seçimi gösterilsin mi?
 }
 
 function defaultFormat(data: any): string {
@@ -85,11 +87,14 @@ export function AgentChat({
   inputKey = 'input', extraBody = {},
   placeholder = 'Mesajını yaz...', suggestions = [],
   formatResponse = defaultFormat,
+  showModelSelector = true, // Varsayılan olarak model seçici göster
 }: AgentChatProps) {
+  const { config } = useProvider();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [selectedModel, setSelectedModel] = useState(config.model); // Her agent için kendi model seçimi
   const sessionIdRef = useRef<string | null>(null); // Oturum ID'si — component yaşadıkça sabit
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);

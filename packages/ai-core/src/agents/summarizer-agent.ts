@@ -1,4 +1,5 @@
 import { createLLM } from '../config/llm';
+import { buildSystemPrompt, getTemperatureForModel } from '../config/prompt-builder';
 
 export type SummaryLength = 'short' | 'medium' | 'detailed';
 export type SummaryFormat = 'paragraph' | 'bullets' | 'structured';
@@ -16,6 +17,7 @@ export interface SummaryResult {
   keyPoints: string[];
   wordCount: { original: number; summary: number; reductionPercent: number };
   topics: string[];
+  debug?: { persona: string; flavor: string; model: string };
 }
 
 type HistoryMessage = { role: 'user' | 'assistant'; content: string };
@@ -29,24 +31,38 @@ const LENGTH_MAP: Record<SummaryLength, string> = {
 export async function runSummarizerAgent(
   request: SummaryRequest,
   userId: string,
-  history: HistoryMessage[] = []
+  history: HistoryMessage[] = [],
+  model?: string
 ): Promise<SummaryResult> {
   const { content, length = 'medium', format = 'paragraph', focusPoints = [], language = 'tr' } = request;
 
-  const llm = createLLM();
+  console.log('Summarizer Agent başlatıldı', { userId, contentLength: content.length, length, model });
 
-  const systemPrompt = `Sen uzman bir metin özetleme asistanısın.
-Özet uzunluğu: ${LENGTH_MAP[length]}
-Format: ${format}
-${focusPoints.length ? `Odaklan: ${focusPoints.join(', ')}` : ''}
-${language === 'tr' ? 'Türkçe yaz.' : `${language} dilinde yaz.`}
-Yanıtını SADECE şu JSON formatında ver:
-{"summary":"Özet","keyPoints":["Nokta 1","Nokta 2"],"topics":["konu1"]}`;
+  // Build system prompt using persona + agent template + model flavor
+  const promptResult = buildSystemPrompt({
+    agent: 'summarizer',
+    model,
+    hasHistory: history.length > 0,
+    extraInstructions: [
+      `Özet uzunluğu: ${LENGTH_MAP[length]}`,
+      `Format: ${format}`,
+      focusPoints.length ? `Odaklan: ${focusPoints.join(', ')}` : '',
+      language === 'tr' ? 'Türkçe yaz.' : `${language} dilinde yaz.`,
+    ].filter(Boolean).join('\n'),
+    jsonSchema: JSON.stringify({
+      summary: "Ana özet",
+      keyPoints: ["Nokta 1", "Nokta 2"],
+      topics: ["konu1"]
+    }, null, 2),
+  });
+
+  const temperature = getTemperatureForModel(model, 'summarizer');
+  const llm = createLLM({ temperature });
 
   const userContent = `Şu metni özetle:\n"""\n${content.slice(0, 8000)}\n"""`;
 
   const messages = [
-    { role: 'system' as const, content: systemPrompt },
+    { role: 'system' as const, content: promptResult.systemPrompt },
     ...history.slice(-4), // Summarizer için daha az geçmiş yeterli
     { role: 'user' as const, content: userContent },
   ];
@@ -73,5 +89,6 @@ Yanıtını SADECE şu JSON formatında ver:
       summary: summaryWords,
       reductionPercent: Math.max(0, Math.round((1 - summaryWords / originalWords) * 100)),
     },
+    debug: promptResult.debug,
   };
 }

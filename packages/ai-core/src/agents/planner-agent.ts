@@ -1,4 +1,5 @@
 import { createLLM } from '../config/llm';
+import { buildSystemPrompt, getTemperatureForModel } from '../config/prompt-builder';
 
 export interface PlanStep {
   id: string;
@@ -18,6 +19,7 @@ export interface Plan {
 export interface PlannerResult {
   plan: Plan;
   rawOutput: string;
+  debug?: { persona: string; flavor: string; model: string };
 }
 
 type HistoryMessage = { role: 'user' | 'assistant'; content: string };
@@ -25,28 +27,31 @@ type HistoryMessage = { role: 'user' | 'assistant'; content: string };
 export async function runPlannerAgent(
   input: string,
   userId: string,
-  history: HistoryMessage[] = []
+  history: HistoryMessage[] = [],
+  model?: string
 ): Promise<PlannerResult> {
-  console.log('Planner Agent başlatıldı', { userId, input: input.slice(0, 80) });
+  console.log('Planner Agent başlatıldı', { userId, input: input.slice(0, 80), model });
 
-  const llm = createLLM();
+  // Build system prompt using persona + agent template + model flavor
+  const promptResult = buildSystemPrompt({
+    agent: 'planner',
+    model,
+    hasHistory: history.length > 0,
+    jsonSchema: JSON.stringify({
+      title: "Planın başlığı",
+      description: "Kısa açıklama",
+      steps: [
+        { id: "step-1", title: "Adım başlığı", description: "Detaylı açıklama", priority: 1, estimatedTime: 60 }
+      ],
+      timeline: { startDate: "bugün", endDate: "tahmini bitiş" }
+    }, null, 2),
+  });
 
-  const systemPrompt = `Sen bir kişisel üretkenlik planlama asistanısın.
-Kullanıcının isteğini analiz et ve somut, uygulanabilir bir plan oluştur.
-Önceki konuşma varsa bağlamı dikkate al.
-Yanıtını SADECE şu JSON formatında ver (başka metin ekleme):
-{
-  "title": "Planın başlığı",
-  "description": "Kısa açıklama",
-  "steps": [
-    { "id": "step-1", "title": "Adım başlığı", "description": "Detaylı açıklama", "priority": 1, "estimatedTime": 60 }
-  ],
-  "timeline": { "startDate": "bugün", "endDate": "tahmini bitiş" }
-}`;
+  const temperature = getTemperatureForModel(model, 'planner');
+  const llm = createLLM({ temperature });
 
-  // Geçmiş mesajları düzgün LangChain messages olarak gönder — string concat DEĞİL
   const messages = [
-    { role: 'system' as const, content: systemPrompt },
+    { role: 'system' as const, content: promptResult.systemPrompt },
     ...history.slice(-6),
     { role: 'user' as const, content: input },
   ];
@@ -66,5 +71,9 @@ Yanıtını SADECE şu JSON formatında ver (başka metin ekleme):
     };
   }
 
-  return { plan, rawOutput };
+  return { 
+    plan, 
+    rawOutput,
+    debug: promptResult.debug,
+  };
 }

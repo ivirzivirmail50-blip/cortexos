@@ -1,10 +1,12 @@
 import { createLLM } from '../config/llm';
+import { buildSystemPrompt, getTemperatureForModel } from '../config/prompt-builder';
 
 export interface WrittenContent {
   title: string;
   content: string;
   wordCount: number;
   readingTime: number;
+  debug?: { persona: string; flavor: string; model: string };
 }
 
 type HistoryMessage = { role: 'user' | 'assistant'; content: string };
@@ -13,18 +15,28 @@ export async function runWriterAgent(
   topic: string,
   context: string,
   userId: string,
-  history: HistoryMessage[] = []
+  history: HistoryMessage[] = [],
+  model?: string
 ): Promise<WrittenContent> {
-  console.log('Writer Agent başlatıldı', { userId, topic });
-  const llm = createLLM();
+  console.log('Writer Agent başlatıldı', { userId, topic, model });
 
-  const systemPrompt = `Sen profesyonel bir içerik yazarısın. Türkçe yaz.
-Önceki konuşma varsa (revizyon, düzenleme istekleri) bağlamı dikkate al.
-Yanıtını SADECE şu JSON formatında ver: {"title":"Başlık","content":"İçerik"}
-${context ? `Ek talimatlar: ${context}` : ''}`;
+  // Build system prompt using persona + agent template + model flavor
+  const promptResult = buildSystemPrompt({
+    agent: 'writer',
+    model,
+    hasHistory: history.length > 0,
+    extraInstructions: context ? `Ek bağlam/talimatlar: ${context}` : undefined,
+    jsonSchema: JSON.stringify({
+      title: "İçerik başlığı",
+      content: "Ana içerik (Markdown destekli)"
+    }, null, 2),
+  });
+
+  const temperature = getTemperatureForModel(model, 'writer');
+  const llm = createLLM({ temperature });
 
   const messages = [
-    { role: 'system' as const, content: systemPrompt },
+    { role: 'system' as const, content: promptResult.systemPrompt },
     ...history.slice(-6),
     { role: 'user' as const, content: topic },
   ];
@@ -50,5 +62,11 @@ ${context ? `Ek talimatlar: ${context}` : ''}`;
   }
 
   const words = content.split(/\s+/).filter(Boolean).length;
-  return { title, content, wordCount: words, readingTime: Math.ceil(words / 200) };
+  return { 
+    title, 
+    content, 
+    wordCount: words, 
+    readingTime: Math.ceil(words / 200),
+    debug: promptResult.debug,
+  };
 }

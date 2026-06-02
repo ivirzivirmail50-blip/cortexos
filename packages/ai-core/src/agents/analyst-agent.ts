@@ -1,4 +1,5 @@
 import { createLLM } from '../config/llm';
+import { buildSystemPrompt, getTemperatureForModel } from '../config/prompt-builder';
 
 export interface AnalysisResult {
   summary: string;
@@ -6,6 +7,7 @@ export interface AnalysisResult {
   insights: string[];
   recommendations: string[];
   dataType: string;
+  debug?: { persona: string; flavor: string; model: string };
 }
 
 type HistoryMessage = { role: 'user' | 'assistant'; content: string };
@@ -14,19 +16,32 @@ export async function runAnalystAgent(
   data: string,
   question: string,
   userId: string,
-  history: HistoryMessage[] = []
+  history: HistoryMessage[] = [],
+  model?: string
 ): Promise<AnalysisResult> {
-  const llm = createLLM();
+  console.log('Analist Agent başlatıldı', { userId, question: question.slice(0, 80), model });
 
-  const systemPrompt = `Sen bir veri analisti ve iş zekası uzmanısın.
-Veriyi analiz et ve soruyu yanıtla. Önceki sorular varsa bağlamı dikkate al.
-Yanıtını SADECE şu JSON formatında ver:
-{"summary":"Genel özet","dataType":"veri türü","patterns":["Örüntü"],"insights":["İçgörü"],"recommendations":["Öneri"]}`;
+  // Build system prompt using persona + agent template + model flavor
+  const promptResult = buildSystemPrompt({
+    agent: 'analyst',
+    model,
+    hasHistory: history.length > 0,
+    jsonSchema: JSON.stringify({
+      summary: "Veri analizi özeti",
+      dataType: "veri türü (metin/sayı/karışık)",
+      patterns: ["Örüntü 1", "Örüntü 2"],
+      insights: ["İçgörü 1", "İçgörü 2"],
+      recommendations: ["Öneri 1", "Öneri 2"]
+    }, null, 2),
+  });
 
-  const userContent = `Veri:\n"""\n${data.slice(0, 4000)}\n"""\n\nSoru: ${question}`;
+  const temperature = getTemperatureForModel(model, 'analyst');
+  const llm = createLLM({ temperature });
+
+  const userContent = `Veri:\\n"""\\n${data.slice(0, 4000)}\\n"""\\n\\nSoru: ${question}`;
 
   const messages = [
-    { role: 'system' as const, content: systemPrompt },
+    { role: 'system' as const, content: promptResult.systemPrompt },
     ...history.slice(-6),
     { role: 'user' as const, content: userContent },
   ];
@@ -35,8 +50,16 @@ Yanıtını SADECE şu JSON formatında ver:
   const raw = response.content?.toString() || '{}';
 
   try {
-    return JSON.parse(raw.replace(/```json\s*|\s*```/g, '').trim());
+    const parsed = JSON.parse(raw.replace(/```json\s*|\s*```/g, '').trim());
+    return { ...parsed, debug: promptResult.debug };
   } catch {
-    return { summary: raw.slice(0, 300), patterns: [], insights: [], recommendations: [], dataType: 'bilinmiyor' };
+    return { 
+      summary: raw.slice(0, 300), 
+      patterns: [], 
+      insights: [], 
+      recommendations: [], 
+      dataType: 'bilinmiyor',
+      debug: promptResult.debug,
+    };
   }
 }
