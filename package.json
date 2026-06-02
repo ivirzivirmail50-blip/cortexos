@@ -1,0 +1,17 @@
+{
+  "name": "cortexos",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "pnpm --filter @cortexos/web dev",
+    "build": "pnpm --filter @cortexos/web build",
+    "telegram": "node telegram-bot.js"
+  },
+  "packageManager": "pnpm@8.15.0",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "dotenv": "^16.6.1",
+    "node-telegram-bot-api": "^0.67.0",
+    "prettier": "^3.2.0",
+    "typescript": "^5.3.0"
+  }
+}

@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: cortexos-postgres
+    environment:
+      POSTGRES_USER: cortex
+      POSTGRES_PASSWORD: cortex
+      POSTGRES_DB: cortexos
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cortex"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  chromadb:
+    image: ghcr.io/chroma-core/chroma:latest
+    container_name: cortexos-chromadb
+    ports:
+      - "8000:8000"
+    environment:
+      - IS_PERSISTENT=TRUE
+    volumes:
+      - chroma_data:/chroma/chroma/
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: cortexos-searxng
+    ports:
+      - "8888:8080"
+    volumes:
+      - searxng_data:/etc/searxng
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888
+
+volumes:
+  postgres_data:
+  chroma_data:
+  searxng_data:

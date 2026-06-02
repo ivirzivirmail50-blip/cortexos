@@ -1,0 +1,11 @@
+{
+  "name": "@cortexos/knowledge-base",
+  "version": "0.1.0",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "chromadb": "^1.8.0",
+    "@cortexos/db": "workspace:*",
+    "@cortexos/utils": "workspace:*"
+  }
+}

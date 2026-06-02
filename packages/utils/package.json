@@ -1,0 +1,13 @@
+{
+  "name": "@cortexos/utils",
+  "version": "0.1.0",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "pino": "^8.19.0"
+  },
+  "devDependencies": {
+    "pino-pretty": "^11.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
