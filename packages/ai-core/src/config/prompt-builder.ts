@@ -4,8 +4,11 @@
  */
 
 import { AgentType, PERSONAS } from './personas';
-import { detectModelFlavor, ModelFlavor } from './model-flavors';
+import { detectModelFlavor, ModelFlavor, getTemperatureForModel } from './model-flavors';
 import { getAgentPromptTemplate } from './agent-prompts';
+
+// Re-export temperature helper for convenience
+export { getTemperatureForModel };
 
 export interface BuildPromptOptions {
   /** Ajan tipi */
