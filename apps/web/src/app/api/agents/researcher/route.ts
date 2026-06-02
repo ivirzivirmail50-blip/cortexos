@@ -3,6 +3,7 @@ import { runResearcherAgent } from '@cortexos/ai-core/src/agents/researcher-agen
 import { getLocalUserId } from '../../../../lib/auth';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { rateLimiter, validateChatInput } from '@cortexos/utils';
 
 type HistoryMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -17,16 +18,28 @@ function getSettings() {
 
 export async function POST(request: Request) {
   try {
+    // Rate limiting
+    const ip = request.headers.get('x-forwarded-for') || 'unknown';
+    const limit = rateLimiter.check(ip);
+    if (!limit.allowed) {
+      return NextResponse.json({ error: 'Rate limit exceeded', retryAfter: limit.retryAfter }, { status: 429 });
+    }
+
+    // Validate input
+    const body = await request.json();
+    const validation = validateChatInput(body);
+    if (!validation.valid) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+
     const userId = await getLocalUserId();
-    const body = await request.json() as { input?: string; history?: HistoryMessage[]; model?: string };
-    const { input, history = [], model } = body;
-    if (!input?.trim()) return NextResponse.json({ error: 'input gerekli' }, { status: 400 });
-    
+    const { message: input, model } = validation.data!;
+
     // Use provided model, or fall back to global settings
     const settings = getSettings();
     const selectedModel = model || settings.model;
-    
-    const result = await runResearcherAgent(input, userId, history, selectedModel);
+
+    const result = await runResearcherAgent(input, userId, [], selectedModel);
     return NextResponse.json(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Hata';
