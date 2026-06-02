@@ -95,13 +95,14 @@ export function AgentChat({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selectedModel, setSelectedModel] = useState(config.model); // Her agent için kendi model seçimi
+  const [streamingContent, setStreamingContent] = useState(''); // Streaming sırasında biriktirilen içerik
   const sessionIdRef = useRef<string | null>(null); // Oturum ID'si — component yaşadıkça sabit
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+  }, [messages, loading, streamingContent]);
 
   const send = async () => {
     const text = input.trim();
@@ -112,6 +113,7 @@ export function AgentChat({
     setInput('');
     setLoading(true);
     setError('');
+    setStreamingContent('');
 
     // İlk mesajda session oluştur
     if (!sessionIdRef.current) {
@@ -128,18 +130,61 @@ export function AgentChat({
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [inputKey]: text, history, ...extraBody }),
+        body: JSON.stringify({ [inputKey]: text, history, model: selectedModel, ...extraBody }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Sunucu hatası: ${res.status}`);
+      // Check if response is streaming (SSE)
+      const contentType = res.headers.get('content-type');
+      if (contentType?.includes('text/event-stream')) {
+        // Handle streaming response
+        const reader = res.body?.getReader();
+        const decoder = new TextDecoder();
+        let accumulatedContent = '';
 
-      const content = formatResponse(data);
-      setMessages(prev => [...prev, { role: 'assistant', content, ts: Date.now() }]);
+        if (reader) {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-      // AI yanıtını kaydet
-      if (sessionIdRef.current) {
-        await saveMessage(sessionIdRef.current, 'assistant', content).catch(() => {});
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n');
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6));
+                  if (data.type === 'token' && data.content) {
+                    accumulatedContent += data.content;
+                    setStreamingContent(accumulatedContent);
+                  } else if (data.type === 'done') {
+                    // Streaming complete
+                    setMessages(prev => [...prev, { role: 'assistant', content: accumulatedContent, ts: Date.now() }]);
+                    setStreamingContent('');
+                    
+                    // AI yanıtını kaydet
+                    if (sessionIdRef.current) {
+                      await saveMessage(sessionIdRef.current, 'assistant', accumulatedContent).catch(() => {});
+                    }
+                  }
+                } catch (e) {
+                  // Parse error, skip this chunk
+                }
+              }
+            }
+          }
+        }
+      } else {
+        // Handle non-streaming response (fallback)
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Sunucu hatası: ${res.status}`);
+
+        const content = formatResponse(data);
+        setMessages(prev => [...prev, { role: 'assistant', content, ts: Date.now() }]);
+
+        // AI yanıtını kaydet
+        if (sessionIdRef.current) {
+          await saveMessage(sessionIdRef.current, 'assistant', content).catch(() => {});
+        }
       }
     } catch (e: any) {
       setError(e.message);
@@ -176,7 +221,7 @@ export function AgentChat({
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: '8px' }}>
-        {messages.length === 0 && !loading && (
+        {messages.length === 0 && !loading && !streamingContent && (
           <div style={{ textAlign: 'center', paddingTop: '60px' }}>
             <div style={{ fontSize: '3rem', marginBottom: '12px' }}>{title.slice(0, 2)}</div>
             <p style={{ fontWeight: 500, color: 'var(--text)', marginBottom: '8px' }}>{placeholder}</p>
@@ -212,10 +257,24 @@ export function AgentChat({
           </div>
         ))}
 
-        {loading && (
+        {loading && !streamingContent && (
           <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
             <div style={{ padding: '12px 16px', borderRadius: '18px', borderTopLeftRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
               💭 Düşünüyor...
+            </div>
+          </div>
+        )}
+
+        {streamingContent && (
+          <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+            <div style={{
+              maxWidth: '85%', padding: '12px 16px', borderRadius: '18px',
+              borderTopLeftRadius: '4px', background: 'var(--bg-card)',
+              border: '1px solid var(--border)', color: 'var(--text)',
+              fontSize: '0.875rem', lineHeight: '1.6', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+            }}>
+              {streamingContent}
+              <span style={{ display: 'inline-block', width: '2px', height: '1em', background: 'var(--text)', marginLeft: '2px', animation: 'blink 1s infinite' }}>▌</span>
             </div>
           </div>
         )}

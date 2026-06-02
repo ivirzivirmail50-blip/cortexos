@@ -1,66 +1,58 @@
 ```
 # Dependencies
 node_modules/
+.yarn/
+npm-debug.log*
+pnpm-debug.log*
 
 # Build outputs
 dist/
 build/
-target/
+.next/
+.nuxt/
+public/build/
+
+# Environment variables
+.env.local
+.env.*
+!.env.example
 
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.py.class
+*.py[cod]
+*$py.class
+*.so
 .Python
 env/
 venv/
 .venv/
-.env
-.env.local
-.env.*
-
-# Logs
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
 *.log
+.git/modules/
+.DS_Store
+Thumbs.db
+
+# TypeScript/JavaScript
+*.tsbuildinfo
+*.js.map
+*.jsx.map
+*.ts.map
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*.tmp
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# Compressed
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
 ```

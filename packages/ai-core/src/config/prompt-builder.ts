@@ -4,8 +4,11 @@
  */
 
 import { AgentType, PERSONAS } from './personas';
-import { detectModelFlavor, ModelFlavor } from './model-flavors';
+import { detectModelFlavor, ModelFlavor, getTemperatureForModel } from './model-flavors';
 import { getAgentPromptTemplate } from './agent-prompts';
+
+// Re-export temperature helper for convenience
+export { getTemperatureForModel };
 
 export interface BuildPromptOptions {
   /** Ajan tipi */
@@ -22,6 +25,8 @@ export interface BuildPromptOptions {
   hasWebSources?: boolean;
   /** Web kaynakları (varsa) */
   sourcesText?: string;
+  /** Ek bağlam (örn: kullanıcı belleği) */
+  extraContext?: string;
 }
 
 export interface BuiltPrompt {
@@ -112,12 +117,17 @@ export function buildSystemPrompt(opts: BuildPromptOptions): BuiltPrompt {
     }
   }
 
-  // 13. Ek talimatlar
+  // 13. Ek bağlam (kullanıcı belleği vs.)
+  if (opts.extraContext) {
+    sections.push(`# 🧠 Ek Bağlam\n${opts.extraContext}`);
+  }
+
+  // 14. Ek talimatlar
   if (opts.extraInstructions) {
     sections.push(`# ➕ Ek Talimatlar\n${opts.extraInstructions}`);
   }
 
-  // 14. JSON şeması
+  // 15. JSON şeması
   if (opts.jsonSchema) {
     sections.push(
       `# 📦 Çıktı Formatı (JSON)\nYanıtını SADECE aşağıdaki JSON formatında ver, başka metin ekleme:\n\`\`\`json\n${opts.jsonSchema}\n\`\`\``

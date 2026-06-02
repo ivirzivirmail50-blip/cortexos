@@ -6,4 +6,5 @@ export * from './agents/summarizer-agent';
 export * from './agents/analyst-agent';
 export * from './agents/multi-agent';
 export * from './services/task-prioritization-service';
+export * from './services/memory-service';
 export * from './config/llm';

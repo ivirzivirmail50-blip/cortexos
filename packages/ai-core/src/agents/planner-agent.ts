@@ -1,5 +1,6 @@
 import { createLLM } from '../config/llm';
 import { buildSystemPrompt, getTemperatureForModel } from '../config/prompt-builder';
+import { memoryService } from '../services/memory-service';
 
 export interface PlanStep {
   id: string;
@@ -32,6 +33,9 @@ export async function runPlannerAgent(
 ): Promise<PlannerResult> {
   console.log('Planner Agent başlatıldı', { userId, input: input.slice(0, 80), model });
 
+  // Get recent memory context
+  const memoryContext = await memoryService.getRecentContext(userId, 10);
+
   // Build system prompt using persona + agent template + model flavor
   const promptResult = buildSystemPrompt({
     agent: 'planner',
@@ -45,6 +49,7 @@ export async function runPlannerAgent(
       ],
       timeline: { startDate: "bugün", endDate: "tahmini bitiş" }
     }, null, 2),
+    extraContext: memoryContext || undefined,
   });
 
   const temperature = getTemperatureForModel(model, 'planner');
