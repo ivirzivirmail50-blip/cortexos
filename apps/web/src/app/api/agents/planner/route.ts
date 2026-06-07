@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     }
 
     const userId = await getLocalUserId();
-    const { message: input, model } = validation.data!;
+    const { message: input, model, history: conversationHistory } = validation.data!;
 
     // Use provided model, or fall back to global settings
     const settings = getSettings();
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     const promptResult = buildSystemPrompt({
       agent: 'planner',
       model: selectedModel,
-      hasHistory: false,
+      hasHistory: !!conversationHistory && conversationHistory.length > 0,
       jsonSchema: JSON.stringify({
         title: "Planın başlığı",
         description: "Kısa açıklama",
@@ -60,6 +60,7 @@ export async function POST(request: Request) {
 
     const messages = [
       { role: 'system' as const, content: promptResult.systemPrompt },
+      ...(conversationHistory || []).map((m: any) => ({ role: m.role as const, content: m.content })),
       { role: 'user' as const, content: input },
     ];
 

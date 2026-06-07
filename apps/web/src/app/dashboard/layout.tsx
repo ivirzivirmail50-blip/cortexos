@@ -11,6 +11,7 @@ const navGroups = [
     label: 'Bilgi Yönetimi',
     items: [
       { href: '/dashboard/documents', icon: '📄', label: 'Dökümanlar' },
+      { href: '/dashboard/library', icon: '📚', label: 'Kütüphane' },
       { href: '/dashboard/knowledge', icon: '🧠', label: 'Bilgi Tabanı' },
       { href: '/dashboard/goals', icon: '🎯', label: 'Hedefler' },
       { href: '/dashboard/tasks', icon: '✅', label: 'Görevler' },
@@ -28,12 +29,14 @@ const navGroups = [
       { href: '/dashboard/summarizer', icon: '📋', label: 'Özetleyici' },
       { href: '/dashboard/analyst', icon: '📊', label: 'Analist' },
       { href: '/dashboard/reflection', icon: '💭', label: 'Yansıma' },
+      { href: '/dashboard/agent-creator', icon: '🛠️', label: 'Ajan Oluşturucu' },
     ],
   },
   {
     label: 'Sistem',
     items: [
       { href: '/dashboard/history', icon: '🕐', label: 'Sohbet Geçmişi' },
+      { href: '/dashboard/language-settings', icon: '🌐', label: 'Dil Ayarları' },
       { href: '/dashboard/settings', icon: '⚙️', label: 'Ayarlar' },
     ],
   },
