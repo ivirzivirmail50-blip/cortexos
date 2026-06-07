@@ -1,48 +1,55 @@
 ```gitignore
 # Dependencies
 node_modules/
-.pnpm-store/
-.yarn/
-__pycache__/
-*.egg-info/
-.venv/
-venv/
-.env
-.env.local
-.env.*
 
 # Build outputs
 dist/
 build/
-target/
+.next/
 out/
-coverage/
-htmlcov/
-.nyc_output/
-*.min.js
-*.min.css
 
-# IDE files
+# Environment variables
+.env
+.env.local
+.env.*
+
+# IDE specific
 .vscode/
 .idea/
 *.swp
 *.swo
-*.tmp
-
-# OS files
-.DS_Store
-Thumbs.db
 
 # Logs
 *.log
-*.out
 
-# Testing
-.pytest_cache/
-.mypy_cache/
+# Python specific
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.ENV
+.python-version
+
+# Coverage reports
+coverage/
+htmlcov/
 .coverage
 
-# Compression
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# MyPy cache
+.mypy_cache/
+.pytest_cache/
+
+# Compressed files
 *.zip
 *.gz
 *.tar
