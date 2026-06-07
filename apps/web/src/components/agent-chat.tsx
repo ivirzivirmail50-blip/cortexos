@@ -6,6 +6,12 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   ts: number;
+  attachments?: Array<{
+    name: string;
+    type: string;
+    size: number;
+    base64?: string;
+  }>;
 }
 
 interface AgentChatProps {
@@ -19,6 +25,9 @@ interface AgentChatProps {
   suggestions?: string[];
   formatResponse?: (data: any) => string;
   showModelSelector?: boolean; // Model seçimi gösterilsin mi?
+  enableFileUpload?: boolean;  // Dosya yükleme özelliği
+  acceptedFileTypes?: string;  // Kabul edilen dosya tipleri
+  supportExport?: boolean;     // PDF/TXT export desteği
 }
 
 function defaultFormat(data: any): string {
@@ -88,6 +97,9 @@ export function AgentChat({
   placeholder = 'Mesajını yaz...', suggestions = [],
   formatResponse = defaultFormat,
   showModelSelector = true, // Varsayılan olarak model seçici göster
+  enableFileUpload = true,  // Dosya yükleme varsayılan aktif
+  acceptedFileTypes = '.txt,.pdf,.doc,.docx,.png,.jpg,.jpeg,.gif',
+  supportExport = true,     // Export varsayılan aktif
 }: AgentChatProps) {
   const { config } = useProvider();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -99,21 +111,89 @@ export function AgentChat({
   const sessionIdRef = useRef<string | null>(null); // Oturum ID'si — component yaşadıkça sabit
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading, streamingContent]);
 
+  // Cleanup preview URLs on unmount
+  useEffect(() => {
+    return () => {
+      previewUrls.forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [previewUrls]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    const newFiles = Array.from(files);
+    setSelectedFiles(prev => [...prev, ...newFiles]);
+    
+    // Create preview URLs for images
+    const imageFiles = newFiles.filter(f => f.type.startsWith('image/'));
+    const newPreviewUrls = imageFiles.map(f => URL.createObjectURL(f));
+    setPreviewUrls(prev => [...prev, ...newPreviewUrls]);
+    
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    setPreviewUrls(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const convertFileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   const send = async () => {
     const text = input.trim();
-    if (!text || loading) return;
+    if ((!text && selectedFiles.length === 0) || loading) return;
 
-    const userMsg: ChatMessage = { role: 'user', content: text, ts: Date.now() };
+    // Process files if any
+    let attachments: ChatMessage['attachments'] = undefined;
+    let fileContext = '';
+    
+    if (selectedFiles.length > 0) {
+      attachments = await Promise.all(
+        selectedFiles.map(async (file) => ({
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          base64: await convertFileToBase64(file).catch(() => undefined),
+        }))
+      );
+      
+      // Add file context to the message
+      fileContext = `\n\n[Dosyalar eklendi: ${selectedFiles.map(f => f.name).join(', ')}]`;
+    }
+
+    const userMsg: ChatMessage = { 
+      role: 'user', 
+      content: text + fileContext, 
+      ts: Date.now(),
+      attachments 
+    };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
     setError('');
     setStreamingContent('');
+    const filesToSend = [...selectedFiles];
+    setSelectedFiles([]);
+    setPreviewUrls([]);
 
     // İlk mesajda session oluştur
     if (!sessionIdRef.current) {
@@ -122,15 +202,28 @@ export function AgentChat({
     }
 
     // Kullanıcı mesajını kaydet
-    await saveMessage(sessionIdRef.current, 'user', text).catch(() => {});
+    await saveMessage(sessionIdRef.current, 'user', text + fileContext).catch(() => {});
 
     const history = messages.slice(-8).map(m => ({ role: m.role, content: m.content }));
 
     try {
+      // Prepare request body with file data if present
+      const requestBody: any = { 
+        [inputKey]: text + fileContext, 
+        history, 
+        model: selectedModel, 
+        ...extraBody 
+      };
+      
+      // Add attachments if any
+      if (attachments && attachments.length > 0) {
+        requestBody.attachments = attachments;
+      }
+
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [inputKey]: text, history, model: selectedModel, ...extraBody }),
+        body: JSON.stringify(requestBody),
       });
 
       // Check if response is streaming (SSE)
@@ -205,6 +298,58 @@ export function AgentChat({
     }
   };
 
+  // Export chat as TXT or PDF
+  const exportChat = async (format: 'txt' | 'pdf') => {
+    if (messages.length === 0) return;
+    
+    let content = '';
+    if (format === 'txt') {
+      content = messages.map(m => 
+        `[${new Date(m.ts).toLocaleString('tr-TR')}] ${m.role === 'user' ? '👤 Kullanıcı' : '🤖 AI'}:\n${m.content}\n`
+      ).join('\n---\n\n');
+      
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${agentType}-sohbet-${new Date().toISOString().slice(0, 10)}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else if (format === 'pdf') {
+      // Simple PDF export using browser's print functionality
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        content = `
+          <!DOCTYPE html>
+          <html dir="rtl">
+          <head>
+            <title>${title} - Sohbet Kaydı</title>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 20px; direction: rtl; }
+              .message { margin: 15px 0; padding: 10px; border-radius: 8px; }
+              .user { background: #e3f2fd; }
+              .assistant { background: #f5f5f5; }
+              .timestamp { font-size: 0.8em; color: #666; }
+            </style>
+          </head>
+          <body>
+            <h1>${title} - Sohbet Kaydı</h1>
+            ${messages.map(m => `
+              <div class="message ${m.role}">
+                <div class="timestamp">${new Date(m.ts).toLocaleString('tr-TR')} - ${m.role === 'user' ? '👤 Kullanıcı' : '🤖 AI'}</div>
+                <div>${m.content.replace(/\n/g, '<br>')}</div>
+              </div>
+            `).join('')}
+          </body>
+          </html>
+        `;
+        printWindow.document.write(content);
+        printWindow.document.close();
+        printWindow.print();
+      }
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 48px)', maxWidth: '800px', margin: '0 auto' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px', flexShrink: 0 }}>
@@ -212,12 +357,26 @@ export function AgentChat({
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text)', margin: 0 }}>{title}</h1>
           {subtitle && <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>{subtitle}</p>}
         </div>
-        {messages.length > 0 && (
-          <button onClick={clearChat} style={{
-            fontSize: '0.75rem', padding: '6px 12px', borderRadius: '10px',
-            border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer'
-          }}>🗑 Temizle</button>
-        )}
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {supportExport && messages.length > 0 && (
+            <>
+              <button onClick={() => exportChat('txt')} style={{
+                fontSize: '0.75rem', padding: '6px 12px', borderRadius: '10px',
+                border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer'
+              }}>📄 TXT</button>
+              <button onClick={() => exportChat('pdf')} style={{
+                fontSize: '0.75rem', padding: '6px 12px', borderRadius: '10px',
+                border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer'
+              }}>📕 PDF</button>
+            </>
+          )}
+          {messages.length > 0 && (
+            <button onClick={clearChat} style={{
+              fontSize: '0.75rem', padding: '6px 12px', borderRadius: '10px',
+              border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer'
+            }}>🗑 Temizle</button>
+          )}
+        </div>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: '8px' }}>
