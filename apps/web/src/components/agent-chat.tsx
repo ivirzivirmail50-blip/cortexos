@@ -114,6 +114,8 @@ export function AgentChat({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const abortControllerRef = useRef<AbortController | null>(null); // Streaming'i durdurmak için
+  const [canStop, setCanStop] = useState(false); // Durdurma butonu gösterilsin mi?
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -191,6 +193,7 @@ export function AgentChat({
     setLoading(true);
     setError('');
     setStreamingContent('');
+    setCanStop(true);
     const filesToSend = [...selectedFiles];
     setSelectedFiles([]);
     setPreviewUrls([]);
@@ -205,6 +208,9 @@ export function AgentChat({
     await saveMessage(sessionIdRef.current, 'user', text + fileContext).catch(() => {});
 
     const history = messages.slice(-8).map(m => ({ role: m.role, content: m.content }));
+
+    // Create new AbortController for this request
+    abortControllerRef.current = new AbortController();
 
     try {
       // Prepare request body with file data if present
@@ -224,6 +230,7 @@ export function AgentChat({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
+        signal: abortControllerRef.current.signal,
       });
 
       // Check if response is streaming (SSE)
@@ -253,6 +260,7 @@ export function AgentChat({
                     // Streaming complete
                     setMessages(prev => [...prev, { role: 'assistant', content: accumulatedContent, ts: Date.now() }]);
                     setStreamingContent('');
+                    setCanStop(false);
                     
                     // AI yanıtını kaydet
                     if (sessionIdRef.current) {
@@ -273,6 +281,7 @@ export function AgentChat({
 
         const content = formatResponse(data);
         setMessages(prev => [...prev, { role: 'assistant', content, ts: Date.now() }]);
+        setCanStop(false);
 
         // AI yanıtını kaydet
         if (sessionIdRef.current) {
@@ -280,10 +289,30 @@ export function AgentChat({
         }
       }
     } catch (e: any) {
-      setError(e.message);
-      setMessages(prev => prev.slice(0, -1));
+      if (e.name === 'AbortError') {
+        // User stopped the generation
+        setStreamingContent('');
+        setCanStop(false);
+        setError('⏹️ Üretim durduruldu');
+        // Add partial content as a message
+        if (streamingContent) {
+          setMessages(prev => [...prev, { role: 'assistant', content: streamingContent + '\n\n[⚠️ Yanıt tamamlanmadı - kullanıcı tarafından durduruldu]', ts: Date.now() }]);
+        }
+      } else {
+        setError(e.message);
+        setMessages(prev => prev.slice(0, -1));
+        setCanStop(false);
+      }
     } finally {
       setLoading(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  const stopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setCanStop(false);
     }
   };
 
