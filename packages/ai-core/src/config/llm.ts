@@ -6,7 +6,7 @@ import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { AIMessageChunk } from '@langchain/core/messages';
 import { IterableReadableStream } from '@langchain/core/utils/stream';
 
-export type LLMProvider = 'groq' | 'openai' | 'anthropic' | 'gemini' | 'mistral' | 'ollama' | 'openrouter';
+export type LLMProvider = 'groq' | 'openai' | 'anthropic' | 'gemini' | 'mistral' | 'ollama' | 'openrouter' | 'deepseek';
 
 export interface LLMConfig {
   provider: LLMProvider;
@@ -107,6 +107,21 @@ export function createLLM(config?: Partial<LLMConfig>): BaseChatModel {
         configuration: {
           baseURL: `${process.env.OLLAMA_BASE_URL || 'http://localhost:11434'}/v1`,
           apiKey: 'ollama',
+        },
+      });
+    }
+
+    case 'deepseek': {
+      // DeepSeek, OpenAI uyumlu API kullanıyor
+      const apiKey = config?.apiKey || process.env.DEEPSEEK_API_KEY;
+      if (!apiKey) throw new Error('DEEPSEEK_API_KEY eksik');
+      return new ChatOpenAI({
+        apiKey,
+        modelName: config?.model || process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+        temperature,
+        streaming,
+        configuration: {
+          baseURL: 'https://api.deepseek.com/v1',
         },
       });
     }
@@ -219,5 +234,12 @@ export const PROVIDERS = {
     envKey: null,
     url: 'https://ollama.com',
     free: true,
+  },
+  deepseek: {
+    name: 'DeepSeek',
+    models: ['deepseek-chat', 'deepseek-coder', 'deepseek-v3'],
+    envKey: 'DEEPSEEK_API_KEY',
+    url: 'https://platform.deepseek.com',
+    free: false,
   },
 } as const;

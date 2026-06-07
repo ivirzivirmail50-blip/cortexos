@@ -215,7 +215,7 @@ export function AgentChat({
     try {
       // Prepare request body with file data if present
       const requestBody: any = { 
-        [inputKey]: text + fileContext, 
+        message: text + fileContext, 
         history, 
         model: selectedModel, 
         ...extraBody 

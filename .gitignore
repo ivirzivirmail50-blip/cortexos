@@ -1,53 +1,30 @@
-```gitignore
+```
 # Dependencies
 node_modules/
 
-# Build outputs
-dist/
-build/
-.next/
-out/
-
-# Environment variables
+# Environment
 .env
 .env.local
 .env.*
 
-# IDE specific
+# Logs and temp files
+*.log
+*.tmp
+
+# Editors
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# Logs
-*.log
+# Build artifacts
+dist/
+build/
+target/
 
-# Python specific
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
-env/
-venv/
-.venv/
-.ENV
-.python-version
-
-# Coverage reports
-coverage/
-htmlcov/
-.coverage
-
-# Temporary files
-*.tmp
-*.temp
-.DS_Store
-Thumbs.db
-
-# MyPy cache
-.mypy_cache/
-.pytest_cache/
 
 # Compressed files
 *.zip
